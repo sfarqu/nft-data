@@ -98,4 +98,9 @@ func getLatestRecord(collection *mongo.Collection) {
 		log.Fatal(err)
 	}
 	fmt.Println(createdDate.CreatedDate)
+	timestamp, err := time.Parse("2006-01-02T15:04:05.999999999", createdDate.CreatedDate)
+	if err != nil {
+		log.Print(err)
+	}
+	fmt.Println(timestamp.Unix())
 }
