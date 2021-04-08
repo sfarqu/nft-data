@@ -27,6 +27,7 @@ func main() {
 	uri := os.Getenv("MONGO_URI")
 	db := os.Getenv("MONGO_DATABASE")
 	coll := os.Getenv("MONGO_COLLECTION")
+	timestamp := os.Getenv("OCCURRED_BEFORE_DATE")
 
 	clientOpts := options.Client().ApplyURI(uri)
 	client, err := mongo.Connect(ctx, clientOpts)
@@ -37,18 +38,18 @@ func main() {
 	collection := client.Database(db).Collection(coll)
 
 	// OpenSea events API capped at 200 pages at a time
-	// Rerunning the task manually after updating hard-coded timestamp value appears to be enough delay to reset counter
-	for i := 0; i <= 200; i++ {
-		events := fetchEvents(i, 1615746153)
+	// Rerunning the task manually after updating timestamp environment variable appears to be enough delay to reset counter
+	for i := 0; i <= 2; i++ {
+		events := fetchEvents(i, timestamp)
 
 		if events == nil {
 			fmt.Println("No events returned")
 			break
 		}
-		_, err := collection.InsertMany(ctx, events)
-		if err != nil {
-			log.Fatal(err)
-		}
+		//_, err := collection.InsertMany(ctx, events)
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
 		fmt.Print(".")
 	}
 	getLatestRecord(collection)
@@ -66,10 +67,9 @@ type OpenSeaEvents struct {
 // Parameters:
 // page - page of API results to return
 // time - earliest timestamp found in previous batch
-// Getting this timestamp and manually copy-pasting into function call is a tedious hack
-func fetchEvents(page int, time int64) []interface{} {
+func fetchEvents(page int, time string) []interface{} {
 	url := fmt.Sprintf(
-		"https://api.opensea.io/api/v1/events?only_opensea=false&offset=%d&limit=50&occurred_before=%d&event_type=successful",
+		"https://api.opensea.io/api/v1/events?only_opensea=false&offset=%d&limit=50&occurred_before=%s&event_type=successful",
 		page*50,
 		time)
 	response, err := http.Get(url)
@@ -95,7 +95,7 @@ type EventDate struct {
 	CreatedDate string `bson:"created_date"`
 }
 
-// Print earliest timestamp in Collection
+// Print earliest timestamp in Collection to be pasted in as timestamp value for next run
 // Note this means you can't change event_type in the OpenSea request between runs, or you'll get different data
 func getLatestRecord(collection *mongo.Collection) {
 
