@@ -25,13 +25,16 @@ func init() {
 func main() {
 	ctx := context.TODO()
 	uri := os.Getenv("MONGO_URI")
+	db := os.Getenv("MONGO_DATABASE")
+	coll := os.Getenv("MONGO_COLLECTION")
+
 	clientOpts := options.Client().ApplyURI(uri)
 	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Disconnect(ctx)
-	collection := client.Database("nft").Collection("opensea_events")
+	collection := client.Database(db).Collection(coll)
 
 	// OpenSea events API capped at 200 pages at a time
 	// Rerunning the task manually appears to be enough delay to reset counter
