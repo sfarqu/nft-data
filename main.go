@@ -37,9 +37,9 @@ func main() {
 	collection := client.Database(db).Collection(coll)
 
 	// OpenSea events API capped at 200 pages at a time
-	// Rerunning the task manually appears to be enough delay to reset counter
+	// Rerunning the task manually after updating hard-coded timestamp value appears to be enough delay to reset counter
 	for i := 0; i <= 200; i++ {
-		events := fetchEvents(i)
+		events := fetchEvents(i, 1615746153)
 
 		if events == nil {
 			fmt.Println("No events returned")
@@ -56,17 +56,22 @@ func main() {
 	fmt.Println("Program complete")
 }
 
+// Interface for OpenSea Event API response
 // Don't worry about event structure, we just know it's an array of json objects
 type OpenSeaEvents struct {
 	Events []interface{} `json:"asset_events"`
 }
 
 // Fetch events from the OpenSea API, returning as an array of JSON objects
-// Page of API results specified as parameter; starting timestamp is hard-coded
-// based on earliest timestamp of previous batch.
-// Getting this tinestamp and manually copy-pasting into this URI is a tedious hack
-func fetchEvents(page int) []interface{} {
-	url := fmt.Sprintf("https://api.opensea.io/api/v1/events?only_opensea=false&offset=%d&limit=50&occurred_before=1615829799&event_type=successful", page*50)
+// Parameters:
+// page - page of API results to return
+// time - earliest timestamp found in previous batch
+// Getting this timestamp and manually copy-pasting into function call is a tedious hack
+func fetchEvents(page int, time int64) []interface{} {
+	url := fmt.Sprintf(
+		"https://api.opensea.io/api/v1/events?only_opensea=false&offset=%d&limit=50&occurred_before=%d&event_type=successful",
+		page*50,
+		time)
 	response, err := http.Get(url)
 	if err != nil {
 		log.Printf("Request Failed: %s", err)
@@ -84,7 +89,7 @@ func fetchEvents(page int) []interface{} {
 	return events.Events
 }
 
-// Interface for OpenSea event data
+// Interface for OpenSea event data from Mongo
 // Only care about date so ignore all other fields
 type EventDate struct {
 	CreatedDate string `bson:"created_date"`
