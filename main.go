@@ -169,9 +169,11 @@ func removeDuplicates(collection *mongo.Collection) {
 	}
 	fmt.Printf("\nDuplicates found: %v\n", len(duplicates))
 	// remove duplicates
-	res, err := collection.DeleteMany(ctx, bson.D{{"_id", bson.D{{"$in", duplicates}}}})
-	if err != nil {
-		log.Fatal(err)
+	if len(duplicates) > 0 {
+		res, err := collection.DeleteMany(ctx, bson.D{{"_id", bson.D{{"$in", duplicates}}}})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Duplicates removed: %v\n", res.DeletedCount)
 	}
-	fmt.Printf("Duplicates removed: %v\n", res.DeletedCount)
 }
