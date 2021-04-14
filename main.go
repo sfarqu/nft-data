@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"io/ioutil"
@@ -39,19 +40,20 @@ func main() {
 
 	// OpenSea events API capped at 200 pages at a time
 	// Rerunning the task manually after updating timestamp environment variable appears to be enough delay to reset counter
-	for i := 0; i <= 2; i++ {
+	for i := 0; i <= 200; i++ {
 		events := fetchEvents(i, timestamp)
 
 		if events == nil {
 			fmt.Println("No events returned")
 			break
 		}
-		//_, err := collection.InsertMany(ctx, events)
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
+		_, err := collection.InsertMany(ctx, events)
+		if err != nil {
+			log.Fatal(err)
+		}
 		fmt.Print(".")
 	}
+	removeDuplicates(collection)
 	getLatestRecord(collection)
 
 	fmt.Println("Program complete")
@@ -111,4 +113,65 @@ func getLatestRecord(collection *mongo.Collection) {
 		log.Print(err)
 	}
 	fmt.Println(timestamp.Unix())
+}
+
+type Duplicates struct {
+	Dups []primitive.ObjectID `bson:"dups"`
+}
+
+// Since updating timestamp is manual and approximate, sometimes duplicate records may be added
+// Remove them from Mongo to keep data clean
+func removeDuplicates(collection *mongo.Collection) {
+	ctx := context.TODO()
+	// Group transactions by OpenSea ID. Store MongoDB IDs and count of matching transactions for each ID
+	groupStage := bson.D{{
+		"$group",
+		bson.D{
+			{"_id",
+				"$id"},
+			{"dups",
+				bson.D{{
+					"$addToSet",
+					"$_id"}}},
+			{"count",
+				bson.D{{
+					"$sum",
+					1}}}}}}
+	// Only match transactions that appear more than once in the database
+	matchStage := bson.D{{
+		"$match",
+		bson.D{
+			{"count",
+				bson.D{{
+					"$gt",
+					1}}}}}}
+
+	cursor, err := collection.Aggregate(ctx, mongo.Pipeline{groupStage, matchStage})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var duplicates []interface{}
+
+	for cursor.Next(ctx) {
+		// decode document
+		var dups Duplicates
+		err := cursor.Decode(&dups)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// keep 1 item from slice
+		toRemove := dups.Dups[1:]
+		// add all other ids from slice to duplicates array
+		for _, v := range toRemove {
+			duplicates = append(duplicates, v)
+		}
+	}
+	fmt.Printf("\nDuplicates found: %v\n", len(duplicates))
+	// remove duplicates
+	res, err := collection.DeleteMany(ctx, bson.D{{"_id", bson.D{{"$in", duplicates}}}})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Duplicates removed: %v\n", res.DeletedCount)
 }
