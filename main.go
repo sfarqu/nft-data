@@ -68,6 +68,9 @@ func main() {
 		}
 	}
 	removeDuplicates(collection)
+	uniqueTokens := getUniqueTokens(collection)
+	uniqueIds := fetchCoinGeckoIds(uniqueTokens)
+	updateHistoricalTokenPrices(client, uniqueIds)
 	getLatestRecord(collection)
 
 	fmt.Println("Program complete")
@@ -191,4 +194,145 @@ func removeDuplicates(collection *mongo.Collection) {
 		}
 		fmt.Printf("Duplicates removed: %v\n", res.DeletedCount)
 	}
+}
+
+type OpenSeaToken struct {
+	Address string `bson:"address"`
+	Symbol  string `bson:"_id"`
+	Name    string `bson:"name"`
+}
+
+type Tokens struct {
+	Id        string `json:"id"`
+	Platforms struct {
+		Address string `json:"ethereum"`
+	} `json:"platforms"`
+}
+
+// Get all unique payment tokens used in events collection
+func getUniqueTokens(events *mongo.Collection) []OpenSeaToken {
+	ctx := context.TODO()
+
+	// group by token symbol
+	groupStage := bson.D{{
+		"$group",
+		bson.D{
+			{"_id", "$payment_token.symbol"},
+			{"address", bson.D{{
+				"$first", "$payment_token.address"},
+			}},
+			{"name", bson.M{"$first": "$payment_token.name"}},
+		},
+	}}
+	cursor, err := events.Aggregate(ctx, mongo.Pipeline{groupStage})
+	if err != nil {
+		log.Fatal(err)
+	}
+	// aggregate results into slice of tokens
+	var tokens []OpenSeaToken
+	for cursor.Next(ctx) {
+		var addr OpenSeaToken
+		cursor.Decode(&addr)
+		tokens = append(tokens, addr)
+	}
+
+	return tokens
+}
+
+// Match tokens from OpenSea data to ids for querying CoinGecko API
+func fetchCoinGeckoIds(openSeaTokens []OpenSeaToken) []string {
+	// get list of all coins from CoinGecko
+	url := "https://api.coingecko.com/api/v3/coins/list?include_platform=true"
+	response, err := http.Get(url)
+	if err != nil {
+		log.Printf("Request Failed: %s", err)
+		return nil
+	}
+
+	var tokens []Tokens
+	defer response.Body.Close()
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Printf("Read Failed: %s", err)
+		return nil
+	}
+	err = json.Unmarshal(body, &tokens)
+
+	ids := []string{"ethereum"}
+	// loop through list of Gecko tokens
+	for _, token := range tokens {
+		// extract matching token addresses
+		for _, v := range openSeaTokens {
+			if token.Platforms.Address == v.Address && v.Address != "" {
+				ids = append(ids, token.Id)
+			}
+		}
+	}
+
+	return ids
+}
+
+// Given an array of ids, fetch historical prices for all of them and add them to the collection
+// in future should also take timestamps
+func updateHistoricalTokenPrices(client *mongo.Client, ids []string) {
+	ctx := context.TODO()
+	// connect to token collection
+	db := os.Getenv("MONGO_DATABASE")
+	coll := os.Getenv("MONGO_PRICE_COLLECTION")
+	tokensCollection := client.Database(db).Collection(coll)
+
+	// For testing only: drop collection every time until I figure out correct data format
+	tokensCollection.Drop(ctx)
+
+	// get price history from CoinGecko
+	for _, id := range ids {
+		prices := getSingleTokenHistory(id)
+		// insert into new collection
+		_, err := tokensCollection.InsertMany(ctx, prices)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+type Price struct {
+	Name      string  `json:"name"` // this isn't actually the correct value, need the symbol to map back to events collection
+	Timestamp int64   `json:"timestamp"`
+	Price     float64 `json:"price"`
+}
+
+// Historic token prices returned by CoinGecko are an array of [timestamp, price]
+type Prices struct {
+	Prices [][2]float64 `json:"prices"`
+}
+
+// Get list of historic token prices for the given coin ID
+func getSingleTokenHistory(id string) []interface{} {
+	// hard-coding timestamps to known existing data, should be variables
+	url := fmt.Sprintf("https://api.coingecko.com/api/v3/coins/%s/market_chart/range?vs_currency=usd&from=1615745719&to=1616598000",
+		id)
+	response, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("Request Failed: %s", err)
+		return nil
+	}
+	defer response.Body.Close()
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		fmt.Printf("Read Failed: %s", err)
+		return nil
+	}
+	var prices Prices
+	err = json.Unmarshal(body, &prices)
+	if err != nil {
+		fmt.Printf("Unmarshal Failed: %s", err)
+		return nil
+	}
+
+	// translate results from plain array to Price object with keys
+	var returnPrices []interface{}
+	for _, v := range prices.Prices {
+		returnPrices = append(returnPrices, Price{id, int64(v[0]), v[1]})
+	}
+	return returnPrices
 }
