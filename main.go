@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
@@ -38,20 +39,33 @@ func main() {
 	defer client.Disconnect(ctx)
 	collection := client.Database(db).Collection(coll)
 
+	// Use command line flags to avoid running unwanted parts of the program while testing
+	var queryOpenSea bool
+	var insertRecords bool
+	flag.BoolVar(&queryOpenSea, "q", false, "Query the OpenSea API starting at the timestamp in OCCURRED_BEFORE_DATE")
+	flag.BoolVar(&insertRecords, "i", false, "Insert new records into MongoDB")
+
+	flag.Parse()
+
 	// OpenSea events API capped at 200 pages at a time
 	// Rerunning the task manually after updating timestamp environment variable appears to be enough delay to reset counter
-	for i := 0; i <= 200; i++ {
-		events := fetchEvents(i, timestamp)
+	if queryOpenSea {
+		fmt.Println("Querying OpenSea...")
+		for i := 0; i <= 200; i++ {
+			events := fetchEvents(i, timestamp)
 
-		if events == nil {
-			fmt.Println("No events returned")
-			break
+			if events == nil {
+				fmt.Println("No events returned")
+				break
+			}
+			if insertRecords {
+				_, err := collection.InsertMany(ctx, events)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+			fmt.Print(".")
 		}
-		_, err := collection.InsertMany(ctx, events)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Print(".")
 	}
 	removeDuplicates(collection)
 	getLatestRecord(collection)
@@ -115,6 +129,7 @@ func getLatestRecord(collection *mongo.Collection) {
 	fmt.Println(timestamp.Unix())
 }
 
+// Interface for duplicates in intermediate bson structure
 type Duplicates struct {
 	Dups []primitive.ObjectID `bson:"dups"`
 }

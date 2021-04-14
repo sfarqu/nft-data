@@ -13,7 +13,7 @@ Replace the URI, database name, and collection name in `.env` to match your conf
 Set `OCCURRED_BEFORE_DATE` to a Unix timestamp representing the end of the period you want to query.
 
 ### Running script
-`go run main.go`
+`go run main.go -q -i`
 
 This script will make up to 200 API requests of 50 transactions each to the OpenSea API "events" endpoint, and insert the responses into Mongo. 
 This is the maximum number of scripted requests permitted by the API.
