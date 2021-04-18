@@ -202,7 +202,7 @@ type OpenSeaToken struct {
 	Name    string `bson:"name"`
 }
 
-type Tokens struct {
+type CoinGeckoToken struct {
 	Id        string `json:"id"`
 	Platforms struct {
 		Address string `json:"ethereum"`
@@ -242,8 +242,13 @@ func getUniqueTokens(events *mongo.Collection) []OpenSeaToken {
 	return tokens
 }
 
+type TokenId struct {
+	Id     string
+	Symbol string
+}
+
 // Match tokens from OpenSea data to ids for querying CoinGecko API
-func fetchCoinGeckoIds(openSeaTokens []OpenSeaToken) []string {
+func fetchCoinGeckoIds(openSeaTokens []OpenSeaToken) []TokenId {
 	// get list of all coins from CoinGecko
 	url := "https://api.coingecko.com/api/v3/coins/list?include_platform=true"
 	response, err := http.Get(url)
@@ -252,32 +257,31 @@ func fetchCoinGeckoIds(openSeaTokens []OpenSeaToken) []string {
 		return nil
 	}
 
-	var tokens []Tokens
+	var coinGeckoTokens []CoinGeckoToken
 	defer response.Body.Close()
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		log.Printf("Read Failed: %s", err)
 		return nil
 	}
-	err = json.Unmarshal(body, &tokens)
+	err = json.Unmarshal(body, &coinGeckoTokens)
 
-	ids := []string{"ethereum"}
-	// loop through list of Gecko tokens
-	for _, token := range tokens {
+	ids := []TokenId{{"ethereum", "ETH"}}
+
+	for _, token := range coinGeckoTokens {
 		// extract matching token addresses
 		for _, v := range openSeaTokens {
 			if token.Platforms.Address == v.Address && v.Address != "" {
-				ids = append(ids, token.Id)
+				ids = append(ids, TokenId{token.Id, v.Symbol})
 			}
 		}
 	}
-
 	return ids
 }
 
 // Given an array of ids, fetch historical prices for all of them and add them to the collection
-// in future should also take timestamps
-func updateHistoricalTokenPrices(client *mongo.Client, ids []string) {
+// TODO: take timestamps for start/end instead of hard-coding
+func updateHistoricalTokenPrices(client *mongo.Client, ids []TokenId) {
 	ctx := context.TODO()
 	// connect to token collection
 	db := os.Getenv("MONGO_DATABASE")
@@ -290,8 +294,8 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []string) {
 		log.Fatal(err)
 	}
 
-	// get price history from CoinGecko
 	for _, id := range ids {
+		// get price history from CoinGecko
 		prices := getSingleTokenHistory(id)
 		// insert into new collection
 		_, err := tokensCollection.InsertMany(ctx, prices)
@@ -302,7 +306,7 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []string) {
 }
 
 type Price struct {
-	Name      string  `json:"name"` // this isn't actually the correct value, need the symbol to map back to events collection
+	Symbol    string  `json:"symbol"`
 	Timestamp int64   `json:"timestamp"`
 	Price     float64 `json:"price"`
 }
@@ -313,10 +317,10 @@ type Prices struct {
 }
 
 // Get list of historic token prices for the given coin ID
-func getSingleTokenHistory(id string) []interface{} {
+func getSingleTokenHistory(id TokenId) []interface{} {
 	// hard-coding timestamps to known existing data, should be variables
 	url := fmt.Sprintf("https://api.coingecko.com/api/v3/coins/%s/market_chart/range?vs_currency=usd&from=1615745719&to=1616598000",
-		id)
+		id.Id)
 	response, err := http.Get(url)
 	if err != nil {
 		fmt.Printf("Request Failed: %s", err)
@@ -338,7 +342,7 @@ func getSingleTokenHistory(id string) []interface{} {
 	// translate results from plain array to Price object with keys
 	var returnPrices []interface{}
 	for _, v := range prices.Prices {
-		returnPrices = append(returnPrices, Price{id, int64(v[0]), v[1]})
+		returnPrices = append(returnPrices, Price{id.Symbol, int64(v[0]), v[1]})
 	}
 	return returnPrices
 }
