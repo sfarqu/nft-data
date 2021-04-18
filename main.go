@@ -308,7 +308,7 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []TokenId) {
 type Price struct {
 	Symbol    string  `json:"symbol"`
 	Timestamp int64   `json:"timestamp"`
-	Price     float64 `json:"price"`
+	Price     float64 `json:"usd_price" bson:"usd_price"`
 }
 
 // Prices is a slice of [timestamp, price] historic values for a given token returned by CoinGecko API
@@ -319,7 +319,7 @@ type Prices struct {
 // Get list of historic token prices for the given coin ID
 func getSingleTokenHistory(id TokenId) []interface{} {
 	// hard-coding timestamps to known existing data, should be variables
-	url := fmt.Sprintf("https://api.coingecko.com/api/v3/coins/%s/market_chart/range?vs_currency=usd&from=1615745719&to=1616598000",
+	url := fmt.Sprintf("https://api.coingecko.com/api/v3/coins/%s/market_chart/range?vs_currency=usd&from=1615744719&to=1616599000",
 		id.Id)
 	response, err := http.Get(url)
 	if err != nil {
