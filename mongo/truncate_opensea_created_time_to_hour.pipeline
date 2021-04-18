@@ -1,0 +1,37 @@
+[{$addFields: {
+    dateParts: {
+    $dateToParts: {
+      date: {
+        $toDate: "$created_date"
+      }
+    }
+  }
+}}, {$addFields: {
+  truncated_date: {
+    $dateFromParts: {
+      year: "$dateParts.year",
+      month: "$dateParts.month",
+      day: "$dateParts.day",
+      hour: "$dateParts.hour"
+    }
+  }
+}}, {$lookup: {
+  from: 'truncated_token_prices',
+  let: { event_token: "$payment_token.symbol",
+    event_time: "$truncated_date"
+  },
+  pipeline: [
+    { $match:
+      { $expr:
+        { $and:
+        [
+          {$eq: ["$symbol", "$$event_token"]},
+          {$eq: ["$roundedDate", "$$event_time"]}
+        ]}
+    }}
+  ],
+  as: 'payment_token_history'
+}}, {$addFields: {
+  usd_historic_price:
+  {$first: "$payment_token_history.usd_price"}
+}}, {$unset: "dateParts"}, {$out: 'opensea_events_price_adjusted'}]

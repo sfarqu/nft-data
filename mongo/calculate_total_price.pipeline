@@ -1,0 +1,51 @@
+[{
+  $match: {
+    event_type: "successful",
+    total_price: {
+      $ne: "0"
+    },
+    "usd_historic_price": {
+      $ne: null
+    },
+    "asset.num_sales": 1
+  }
+}, {
+  $group: {
+    _id: {"id": "$id"},
+    value: {
+      $max: "$total_price"
+    },
+    decimals: {
+      $max: "$payment_token.decimals"
+    },
+    exchange: {
+      $max: "$usd_historic_price"
+    }
+  }
+}, {
+  $project: {
+    value: {
+      $convert: {
+        input: "$value",
+        to: "decimal"
+      }
+    },
+    decimal: {
+      $pow: [10, "$decimals"]
+    },
+    exchange: {
+      $convert: {
+        input: "$exchange",
+        to: "decimal"
+      }
+    }
+  }
+}, {
+  $project: {
+    total: {
+      $multiply: [{
+        $divide: ["$value", "$decimal"]
+      }, "$exchange"]
+    }
+  }
+}]

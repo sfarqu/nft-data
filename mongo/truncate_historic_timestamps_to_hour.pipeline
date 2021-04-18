@@ -1,0 +1,18 @@
+[{$addFields: {
+  dateParts: {
+    $dateToParts: {
+      date: {
+        $toDate: "$timestamp"
+      }
+    }
+  }
+}}, {$addFields: {
+  roundedDate: {
+    $dateFromParts: {
+      year: "$dateParts.year",
+      month: "$dateParts.month",
+      day: "$dateParts.day",
+      hour: "$dateParts.hour"
+    }
+  }
+}}, {$out: 'truncated_token_prices'}]

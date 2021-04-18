@@ -212,7 +212,7 @@ type CoinGeckoToken struct {
 // Get all unique payment tokens used in events collection
 func getUniqueTokens(events *mongo.Collection) []OpenSeaToken {
 	ctx := context.TODO()
-
+	fmt.Println("Aggregating unique tokens used...")
 	// group by token symbol
 	groupStage := bson.D{{
 		"$group",
@@ -266,6 +266,7 @@ func fetchCoinGeckoIds(openSeaTokens []OpenSeaToken) []TokenId {
 	}
 	err = json.Unmarshal(body, &coinGeckoTokens)
 
+	fmt.Println("Matching tokens across APIs...")
 	ids := []TokenId{{"ethereum", "ETH"}}
 
 	for _, token := range coinGeckoTokens {
@@ -289,11 +290,13 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []TokenId) {
 	tokensCollection := client.Database(db).Collection(coll)
 
 	// For testing only: drop collection every time until I figure out correct data format
+	fmt.Println("Dropping token price collection...")
 	err := tokensCollection.Drop(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	fmt.Println("Fetching token price histories...")
 	for _, id := range ids {
 		// get price history from CoinGecko
 		prices := getSingleTokenHistory(id)
@@ -302,6 +305,7 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []TokenId) {
 		if err != nil {
 			log.Fatal(err)
 		}
+		fmt.Print(".")
 	}
 }
 
