@@ -76,7 +76,7 @@ func main() {
 	fmt.Println("Program complete")
 }
 
-// Interface for OpenSea Event API response
+// OpenSeaEvents is an interface for a single OpenSea Event API response
 // Don't worry about event structure, we just know it's an array of json objects
 type OpenSeaEvents struct {
 	Events []interface{} `json:"asset_events"`
@@ -108,7 +108,7 @@ func fetchEvents(page int, time string) []interface{} {
 	return events.Events
 }
 
-// Interface for OpenSea event data from Mongo
+// EventDate is an interface for OpenSea event data from Mongo
 // Only care about date so ignore all other fields
 type EventDate struct {
 	CreatedDate string `bson:"created_date"`
@@ -132,7 +132,7 @@ func getLatestRecord(collection *mongo.Collection) {
 	fmt.Println(timestamp.Unix())
 }
 
-// Interface for duplicates in intermediate bson structure
+// Duplicates is an interface for duplicates in intermediate bson structure
 type Duplicates struct {
 	Dups []primitive.ObjectID `bson:"dups"`
 }
@@ -232,7 +232,10 @@ func getUniqueTokens(events *mongo.Collection) []OpenSeaToken {
 	var tokens []OpenSeaToken
 	for cursor.Next(ctx) {
 		var addr OpenSeaToken
-		cursor.Decode(&addr)
+		err := cursor.Decode(&addr)
+		if err != nil {
+			return nil
+		}
 		tokens = append(tokens, addr)
 	}
 
@@ -282,7 +285,10 @@ func updateHistoricalTokenPrices(client *mongo.Client, ids []string) {
 	tokensCollection := client.Database(db).Collection(coll)
 
 	// For testing only: drop collection every time until I figure out correct data format
-	tokensCollection.Drop(ctx)
+	err := tokensCollection.Drop(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// get price history from CoinGecko
 	for _, id := range ids {
@@ -301,7 +307,7 @@ type Price struct {
 	Price     float64 `json:"price"`
 }
 
-// Historic token prices returned by CoinGecko are an array of [timestamp, price]
+// Prices is a slice of [timestamp, price] historic values for a given token returned by CoinGecko API
 type Prices struct {
 	Prices [][2]float64 `json:"prices"`
 }
