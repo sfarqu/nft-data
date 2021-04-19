@@ -1,0 +1,180 @@
+[{$match: {
+  total_price: {
+    $not: RegExp('^0$')
+  },
+  usd_historic_price: {
+    $ne: null
+  },
+  'asset.num_sales': 1
+}}, {$group: {
+  _id: {
+    collection: '$collection_slug'
+  },
+  count: {
+    $sum: 1
+  },
+  values: {
+    $push: '$total_price'
+  },
+  decimals: {
+    $push: '$payment_token.decimals'
+  },
+  exchange: {
+    $push: '$usd_historic_price'
+  }
+}}, {$unwind: {
+  path: '$values',
+  includeArrayIndex: 'idx'
+}}, {$project: {
+  count: 1,
+  id: {
+    $arrayElemAt: [
+      '$id',
+      '$idx'
+    ]
+  },
+  contract: {
+    $arrayElemAt: [
+      '$contract',
+      '$idx'
+    ]
+  },
+  raw_value: '$values',
+  raw_decimal: {
+    $arrayElemAt: [
+      '$decimals',
+      '$idx'
+    ]
+  },
+  raw_exchange: {
+    $arrayElemAt: [
+      '$exchange',
+      '$idx'
+    ]
+  },
+  value: {
+    $convert: {
+      input: '$values',
+      to: 'decimal'
+    }
+  },
+  decimal: {
+    $pow: [
+      10,
+      {
+        $arrayElemAt: [
+          '$decimals',
+          '$idx'
+        ]
+      }
+    ]
+  },
+  exchange: {
+    $convert: {
+      input: {
+        $arrayElemAt: [
+          '$exchange',
+          '$idx'
+        ]
+      },
+      to: 'decimal'
+    }
+  },
+  midpoint: {
+    $divide: [
+      '$count',
+      2
+    ]
+  }
+}}, {$project: {
+  count: 1,
+  value: 1,
+  midpoint: 1,
+  total: {
+    $multiply: [
+      {
+        $divide: [
+          '$value',
+          '$decimal'
+        ]
+      },
+      '$exchange'
+    ]
+  }
+}}, {$sort: {
+  total: 1
+}}, {$project: {
+  id: '$_id.collection',
+  count: 1,
+  raw_value: 1,
+  total: 1,
+  midpoint: 1,
+  high: {
+    $cond: {
+      'if': {
+        $eq: [
+          {
+            $mod: [
+              '$count',
+              2
+            ]
+          },
+          0
+        ]
+      },
+      then: {
+        $add: [
+          '$midpoint',
+          1
+        ]
+      },
+      'else': {
+        $floor: '$midpoint'
+      }
+    }
+  },
+  low: {
+    $floor: '$midpoint'
+  }
+}}, {$group: {
+  _id: {
+    collection: '$id'
+  },
+  count: {
+    $sum: 1
+  },
+  values: {
+    $push: '$total'
+  },
+  high: {
+    $avg: '$high'
+  },
+  low: {
+    $avg: '$low'
+  }
+}}, {$project: {
+  count: 1,
+  beginValue: {
+    $arrayElemAt: [
+      '$values',
+      '$high'
+    ]
+  },
+  endValue: {
+    $arrayElemAt: [
+      '$values',
+      '$low'
+    ]
+  }
+}}, {$project: {
+  collection: '$_id.collection',
+  count: 1,
+  median: {
+    $avg: [
+      '$beginValue',
+      '$endValue'
+    ]
+  }
+}}, {$sort: {
+  median: -1
+}}]
