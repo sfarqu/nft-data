@@ -36,7 +36,16 @@ to take up too much database space for not much value.
 This script also pulls historic prices for all payment tokens found in the OpenSea transactions from a different API,
 CoinGecko.
 
-### Using MongoDB aggregation pipelines
+#### Command Line options
+Some of the script functionality requires command-line flags to trigger. This is simply because I didn't want to run queries
+or insert into the database over and over when testing later functionality
+
+Flag | Description
+---- | :----------
+q | **query**: If this flag is enabled, the script will query the OpenSea API 200 times
+i | **insert**: If this flag is enabled, queried OpenSea records will be inserted into the database. Requires `-q`
+
+## MongoDB aggregation pipelines
 This script does not calculate sale prices in USD, it simply inserts the API results into MongoDB. For this project, 
 calculating sale price and generating charts was done using MongoDB aggregation pipelines. The contents of those 
 pipelines have been included in this repository under the `mongo` directory for transparency.
@@ -44,7 +53,7 @@ pipelines have been included in this repository under the `mongo` directory for 
 Using MongoDB is outside the scope of this document, but these pipelines can be pasted into the MongoDB interface to
 test
 
-#### Truncate Historic Timestamps to Hour
+#### 1. Truncate Historic Timestamps to Hour
 The [CoinGecko API](https://www.coingecko.com/en/api) returns historical market data at different granularity depending 
 on the selected time range. This repo uses a single API call to get history for a 10-day span, which returns hourly prices.
 Unfortunately timestamps were not *exactly* on the hour, and since fuzzy-matching dates in a join is a pain, timestamps
@@ -53,7 +62,7 @@ more API calls, for not that much difference in prices.
 
 This aggregation runs on the `MONGO_PRICE_COLLECTION` collection and outputs to a new collection.
 
-#### Combine Adjusted Token Prices
+#### 2. Combine Adjusted Token Prices
 This pipeline is run on the `MONGO_COLLECTION` collection. It does a lookup to the historic prices collection to get a 
 roughly-accurate historic USD price for each transaction. This calculated field, `usd_historic_price`, is used by the 
 following aggregations.
@@ -61,7 +70,7 @@ following aggregations.
 This pipeline outputs to a new collection because it kept timing out on our dataset. This doubles storage requirements, 
 but made making charts easier.
 
-#### Calculate Total Price
+#### 3. Calculate Total Price
 In the OpenSea data, total sale price is stored as the number of payment tokens spent, but as text and without decimal 
 places. Details about the payment token are also stored, including the number of decimal places that should be inserted 
 into the total to get the actual number of tokens, and the price of the token in US dollars.
@@ -78,7 +87,7 @@ API and used instead of the `usd_price` value from OpenSea.
 
 This aggregation is used by charts referencing primary sale price, and is integrated in the Median By Collection pipeline.
 
-#### Median By Collection
+#### 4. Median By Collection
 This was the first pipeline we tried, and it is probably not the most efficient way to calculate the median. Pipeline is
 roughly based off [this article](https://www.compose.com/articles/mongo-metrics-finding-a-happy-median/), but the article
 uses an incorrect median calculation, which has been corrected.
